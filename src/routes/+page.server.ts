@@ -10,9 +10,11 @@ import {
 	deleteTransaction,
 	getTransactionById,
 	getBorrowerSplits,
+	getBorrowerSplitByDate,
 	createBorrowerSplit
 } from '$lib/server/db/queries';
 import { validateTransactionForm } from '$lib/utils/validation';
+import { calculateBorrowerTotalOutstanding } from '$lib/utils/calculations';
 import type { TransactionFormData, PropertyInfo } from '$lib/types';
 
 /**
@@ -240,15 +242,26 @@ export const actions: Actions = {
 			});
 		}
 
+		// Special validation for repayment transactions when editing
 		if (transactionData.type === 'repayment') {
 			try {
 				const loanSummary = await calculateLoanSummary();
-				const errors = validateTransactionForm(transactionData, loanSummary);
+				const borrower = loanSummary.borrowers[transactionData.paidBy as 'me' | 'spouse'];
 
-				if (errors.length > 0) {
+				// When editing a repayment, we need to account for the original transaction
+				// The current outstanding already includes the effect of the original repayment
+				// So we need to add back the original amount to get the "available to repay"
+				let maxRepayment = calculateBorrowerTotalOutstanding(borrower);
+
+				// If the original transaction was also a repayment by the same person, add it back
+				if (existing.type === 'repayment' && existing.paidBy === transactionData.paidBy) {
+					maxRepayment += existing.amount;
+				}
+
+				if (transactionData.amount > maxRepayment) {
 					return fail(400, {
 						error: 'validation',
-						message: errors[0].message
+						message: `Amount exceeds ${transactionData.paidBy === 'me' ? 'your' : "spouse's"} outstanding balance`
 					});
 				}
 			} catch (err) {
@@ -331,6 +344,15 @@ export const actions: Actions = {
 			return fail(400, {
 				error: 'validation',
 				message: 'Split percentages must be between 0-100 and sum to 100%'
+			});
+		}
+
+		// Check for duplicate effective dates
+		const existingSplit = await getBorrowerSplitByDate(effectiveFrom);
+		if (existingSplit) {
+			return fail(400, {
+				error: 'validation',
+				message: 'A borrower split already exists for this date'
 			});
 		}
 

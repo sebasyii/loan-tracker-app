@@ -220,6 +220,19 @@ export async function getBorrowerSplitForDate(date: string) {
 }
 
 /**
+ * Check if a borrower split already exists for a specific date
+ */
+export async function getBorrowerSplitByDate(effectiveFrom: string) {
+	const result = await db
+		.select()
+		.from(borrowerSplits)
+		.where(eq(borrowerSplits.effectiveFrom, effectiveFrom))
+		.limit(1);
+
+	return result[0] || null;
+}
+
+/**
  * Create a new borrower split
  */
 export async function createBorrowerSplit(

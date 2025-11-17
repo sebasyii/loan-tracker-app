@@ -86,7 +86,6 @@ let isSplitSubmitting = $state(false);
 			}
 
 			const message =
-				result?.data?.message ||
 				result?.message ||
 				`Failed to ${action === 'addTransaction' ? 'add' : 'update'} transaction`;
 			console.error(`Failed to ${action}:`, result);
@@ -155,7 +154,7 @@ let isSplitSubmitting = $state(false);
 				return;
 			}
 
-			const message = result?.data?.message || result?.message || 'Failed to delete transaction';
+			const message = result?.message || 'Failed to delete transaction';
 			console.error('Failed to delete transaction:', result);
 			alert(message);
 		} catch (error) {
@@ -188,7 +187,7 @@ let isSplitSubmitting = $state(false);
 				return;
 			}
 
-			const message = result?.data?.message || result?.message || 'Failed to save borrower split';
+			const message = result?.message || 'Failed to save borrower split';
 			console.error('Failed to save borrower split:', result);
 			alert(message);
 		} catch (error) {

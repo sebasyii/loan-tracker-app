@@ -62,6 +62,13 @@ let isSplitSubmitting = $state(false);
 		form.append('paidBy', formData.paidBy);
 		form.append('amount', formData.amount.toString());
 		form.append('description', formData.description);
+
+		// Add borrower override if present
+		if (formData.borrowerOverride) {
+			form.append('borrowerOverrideMeAmount', formData.borrowerOverride.meAmount.toString());
+			form.append('borrowerOverrideSpouseAmount', formData.borrowerOverride.spouseAmount.toString());
+		}
+
 		return form;
 	}
 
@@ -256,6 +263,7 @@ let isSplitSubmitting = $state(false);
 <TransactionModal
 	bind:open={showTransactionModal}
 	{loanSummary}
+	{borrowerSplits}
 	mode={transactionModalMode}
 	initialData={editingTransaction}
 	onClose={closeTransactionModal}

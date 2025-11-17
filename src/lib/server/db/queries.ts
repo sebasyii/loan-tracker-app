@@ -98,7 +98,14 @@ export async function getTransactions(): Promise<UITransaction[]> {
 		category: t.category as UITransaction['category'],
 		paidBy: t.paidBy as UITransaction['paidBy'],
 		amount: centsToDollars(t.amount),
-		description: t.description
+		description: t.description,
+		borrowerOverride:
+			t.borrowerOverrideMeAmount !== null && t.borrowerOverrideSpouseAmount !== null
+				? {
+						meAmount: centsToDollars(t.borrowerOverrideMeAmount),
+						spouseAmount: centsToDollars(t.borrowerOverrideSpouseAmount)
+					}
+				: undefined
 	}));
 }
 
@@ -113,6 +120,12 @@ export async function addTransaction(data: Omit<UITransaction, 'id'>): Promise<v
 		paidBy: data.paidBy,
 		amount: dollarsToCents(data.amount),
 		description: data.description,
+		borrowerOverrideMeAmount: data.borrowerOverride
+			? dollarsToCents(data.borrowerOverride.meAmount)
+			: undefined,
+		borrowerOverrideSpouseAmount: data.borrowerOverride
+			? dollarsToCents(data.borrowerOverride.spouseAmount)
+			: undefined,
 		createdAt: new Date().toISOString()
 	};
 
@@ -135,7 +148,14 @@ export async function getTransactionById(id: string): Promise<UITransaction | nu
 		category: txn.category as UITransaction['category'],
 		paidBy: txn.paidBy as UITransaction['paidBy'],
 		amount: centsToDollars(txn.amount),
-		description: txn.description
+		description: txn.description,
+		borrowerOverride:
+			txn.borrowerOverrideMeAmount !== null && txn.borrowerOverrideSpouseAmount !== null
+				? {
+						meAmount: centsToDollars(txn.borrowerOverrideMeAmount),
+						spouseAmount: centsToDollars(txn.borrowerOverrideSpouseAmount)
+					}
+				: undefined
 	};
 }
 
@@ -154,7 +174,13 @@ export async function updateTransaction(
 			category: data.category,
 			paidBy: data.paidBy,
 			amount: dollarsToCents(data.amount),
-			description: data.description
+			description: data.description,
+			borrowerOverrideMeAmount: data.borrowerOverride
+				? dollarsToCents(data.borrowerOverride.meAmount)
+				: null,
+			borrowerOverrideSpouseAmount: data.borrowerOverride
+				? dollarsToCents(data.borrowerOverride.spouseAmount)
+				: null
 		})
 		.where(eq(transactions.id, id));
 }
@@ -260,32 +286,69 @@ export async function createBorrowerSplit(
  * Repayment Logic:
  * - Principal borrowed = sum of all helper_disbursement transactions
  * - Interest charged = sum of all interest_charge transactions
- * - Total owed = principalBorrowed + interestCharged
- * - When repayments are made, they reduce the total outstanding balance
- * - Borrower splits determine how much each person owes of the outstanding amount
+ * - For each helper_disbursement or interest_charge:
+ *   - If borrowerOverride exists, use those amounts
+ *   - Otherwise, use the split effective for that transaction date
+ * - Track per-borrower principal and interest charges
+ * - When repayments are made, they reduce the borrower's outstanding balance
  */
 export async function calculateLoanSummary(): Promise<LoanSummary> {
 	const txns = await getTransactions();
-	const split = await getCurrentBorrowerSplit();
+	const splits = await getBorrowerSplits();
 
-	if (!split) {
+	if (splits.length === 0) {
 		throw new Error('No borrower split configuration found. Please run database seed.');
 	}
 
-	const mePercent = split.mePercent / 100;
-	const spousePercent = split.spousePercent / 100;
+	// Helper function to get split for a specific date
+	const getSplitForDate = (date: string) => {
+		const applicableSplits = splits.filter((s) => s.effectiveFrom <= date);
+		if (applicableSplits.length === 0) {
+			// Use the earliest split if transaction is before any split
+			return splits[splits.length - 1];
+		}
+		// Return the most recent split before or on the transaction date
+		return applicableSplits[0];
+	};
 
-	// Calculate totals from transactions
-	let principalBorrowed = 0;
-	let interestCharged = 0;
+	// Track per-borrower amounts
+	let mePrincipal = 0;
+	let meInterest = 0;
+	let spousePrincipal = 0;
+	let spouseInterest = 0;
 	let meRepaid = 0;
 	let spouseRepaid = 0;
 
-	for (const txn of txns) {
+	// Sort transactions by date (oldest first) for chronological processing
+	const sortedTxns = [...txns].sort((a, b) => a.date.localeCompare(b.date));
+
+	for (const txn of sortedTxns) {
 		if (txn.type === 'helper_disbursement') {
-			principalBorrowed += txn.amount;
+			if (txn.borrowerOverride) {
+				// Use override amounts
+				mePrincipal += txn.borrowerOverride.meAmount;
+				spousePrincipal += txn.borrowerOverride.spouseAmount;
+			} else {
+				// Use split for transaction date
+				const split = getSplitForDate(txn.date);
+				const meShare = txn.amount * (split.mePercent / 100);
+				const spouseShare = txn.amount * (split.spousePercent / 100);
+				mePrincipal += meShare;
+				spousePrincipal += spouseShare;
+			}
 		} else if (txn.type === 'interest_charge') {
-			interestCharged += txn.amount;
+			if (txn.borrowerOverride) {
+				// Use override amounts
+				meInterest += txn.borrowerOverride.meAmount;
+				spouseInterest += txn.borrowerOverride.spouseAmount;
+			} else {
+				// Use split for transaction date
+				const split = getSplitForDate(txn.date);
+				const meShare = txn.amount * (split.mePercent / 100);
+				const spouseShare = txn.amount * (split.spousePercent / 100);
+				meInterest += meShare;
+				spouseInterest += spouseShare;
+			}
 		} else if (txn.type === 'repayment') {
 			if (txn.paidBy === 'me') {
 				meRepaid += txn.amount;
@@ -295,37 +358,45 @@ export async function calculateLoanSummary(): Promise<LoanSummary> {
 		}
 	}
 
+	// Calculate totals
+	const principalBorrowed = mePrincipal + spousePrincipal;
+	const interestCharged = meInterest + spouseInterest;
 	const totalRepaid = meRepaid + spouseRepaid;
-	const totalOwed = principalBorrowed + interestCharged;
-	const totalOutstanding = totalOwed - totalRepaid;
 
-	// Calculate outstanding principal and interest
-	// After repayments, we reduce the total outstanding proportionally
-	const outstandingRatio = totalRepaid >= totalOwed ? 0 : totalOutstanding / totalOwed;
-	const outstandingPrincipal = principalBorrowed * outstandingRatio;
-	const outstandingInterest = interestCharged * outstandingRatio;
+	// Calculate per-borrower outstanding amounts
+	const meTotalCharged = mePrincipal + meInterest;
+	const spouseTotalCharged = spousePrincipal + spouseInterest;
+	const meTotalOutstanding = Math.max(0, meTotalCharged - meRepaid);
+	const spouseTotalOutstanding = Math.max(0, spouseTotalCharged - spouseRepaid);
 
-	// Calculate per-borrower amounts based on current split
-	const meTotalOutstanding = totalOutstanding * mePercent;
-	const spouseTotalOutstanding = totalOutstanding * spousePercent;
+	// Calculate outstanding principal and interest per borrower
+	// When borrower makes repayment, reduce their charges proportionally
+	const meOutstandingRatio = meTotalCharged > 0 ? meTotalOutstanding / meTotalCharged : 0;
+	const spouseOutstandingRatio =
+		spouseTotalCharged > 0 ? spouseTotalOutstanding / spouseTotalCharged : 0;
+
+	const meOutstandingPrincipal = mePrincipal * meOutstandingRatio;
+	const meOutstandingInterest = meInterest * meOutstandingRatio;
+	const spouseOutstandingPrincipal = spousePrincipal * spouseOutstandingRatio;
+	const spouseOutstandingInterest = spouseInterest * spouseOutstandingRatio;
 
 	return {
 		totals: {
 			principalBorrowed,
 			interestCharged,
 			totalRepaid,
-			outstandingPrincipal,
-			outstandingInterest
+			outstandingPrincipal: meOutstandingPrincipal + spouseOutstandingPrincipal,
+			outstandingInterest: meOutstandingInterest + spouseOutstandingInterest
 		},
 		borrowers: {
 			me: {
-				principalOwed: meTotalOutstanding * (outstandingPrincipal / totalOutstanding || 0),
-				interestOwed: meTotalOutstanding * (outstandingInterest / totalOutstanding || 0),
+				principalOwed: meOutstandingPrincipal,
+				interestOwed: meOutstandingInterest,
 				totalPaidHistorically: meRepaid
 			},
 			spouse: {
-				principalOwed: spouseTotalOutstanding * (outstandingPrincipal / totalOutstanding || 0),
-				interestOwed: spouseTotalOutstanding * (outstandingInterest / totalOutstanding || 0),
+				principalOwed: spouseOutstandingPrincipal,
+				interestOwed: spouseOutstandingInterest,
 				totalPaidHistorically: spouseRepaid
 			}
 		}

@@ -123,13 +123,26 @@ export const actions: Actions = {
 	addTransaction: async ({ request }) => {
 		const formData = await request.formData();
 
+		// Parse borrower override if present
+		const borrowerOverrideMeAmount = formData.get('borrowerOverrideMeAmount');
+		const borrowerOverrideSpouseAmount = formData.get('borrowerOverrideSpouseAmount');
+		let borrowerOverride = undefined;
+
+		if (borrowerOverrideMeAmount && borrowerOverrideSpouseAmount) {
+			borrowerOverride = {
+				meAmount: Number(borrowerOverrideMeAmount),
+				spouseAmount: Number(borrowerOverrideSpouseAmount)
+			};
+		}
+
 		const transactionData: TransactionFormData = {
 			date: formData.get('date')?.toString() || '',
 			type: formData.get('type')?.toString() as any,
 			category: formData.get('category')?.toString() as any,
 			paidBy: formData.get('paidBy')?.toString() as any,
 			amount: Number(formData.get('amount')),
-			description: formData.get('description')?.toString() || ''
+			description: formData.get('description')?.toString() || '',
+			borrowerOverride
 		};
 
 		// Server-side validation
@@ -211,13 +224,26 @@ export const actions: Actions = {
 			});
 		}
 
+		// Parse borrower override if present
+		const borrowerOverrideMeAmount = formData.get('borrowerOverrideMeAmount');
+		const borrowerOverrideSpouseAmount = formData.get('borrowerOverrideSpouseAmount');
+		let borrowerOverride = undefined;
+
+		if (borrowerOverrideMeAmount && borrowerOverrideSpouseAmount) {
+			borrowerOverride = {
+				meAmount: Number(borrowerOverrideMeAmount),
+				spouseAmount: Number(borrowerOverrideSpouseAmount)
+			};
+		}
+
 		const transactionData: TransactionFormData = {
 			date: formData.get('date')?.toString() || '',
 			type: formData.get('type')?.toString() as any,
 			category: formData.get('category')?.toString() as any,
 			paidBy: formData.get('paidBy')?.toString() as any,
 			amount: Number(formData.get('amount')),
-			description: formData.get('description')?.toString() || ''
+			description: formData.get('description')?.toString() || '',
+			borrowerOverride
 		};
 
 		if (!transactionData.date) {

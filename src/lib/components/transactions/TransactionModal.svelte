@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TransactionFormData, LoanSummary, Transaction } from '$lib/types';
+	import type { TransactionFormData, LoanSummary, Transaction, BorrowerSplit } from '$lib/types';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TransactionForm from './TransactionForm.svelte';
@@ -7,6 +7,7 @@
 	interface Props {
 		open: boolean;
 		loanSummary: LoanSummary;
+		borrowerSplits: BorrowerSplit[];
 		mode?: 'create' | 'edit';
 		initialData?: Transaction | null;
 		onClose: () => void;
@@ -17,6 +18,7 @@
 	let {
 		open = $bindable(),
 		loanSummary,
+		borrowerSplits,
 		mode = 'create',
 		initialData = null,
 		onClose,
@@ -60,6 +62,7 @@
 		<TransactionForm
 			bind:this={formComponent}
 			{loanSummary}
+			{borrowerSplits}
 			{isSubmitting}
 			onSubmit={handleSubmit}
 			{mode}

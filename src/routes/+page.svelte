@@ -1,101 +1,208 @@
 <script lang="ts">
-	import type { PropertyInfo, LoanSummary, Transaction, TransactionFormData } from '$lib/types';
+	import type { PageData } from './$types';
+	import type { TransactionFormData, Transaction, BorrowerSplit } from '$lib/types';
 	import PropertyCard from '$lib/components/property/PropertyCard.svelte';
 	import LoanSummaryCard from '$lib/components/loan/LoanSummaryCard.svelte';
+	import BorrowerSplitCard from '$lib/components/loan/BorrowerSplitCard.svelte';
 	import TransactionTable from '$lib/components/transactions/TransactionTable.svelte';
 	import TransactionModal from '$lib/components/transactions/TransactionModal.svelte';
+	import Modal from '$lib/components/ui/Modal.svelte';
+	import { formatCurrency, formatDate } from '$lib/utils/formatting';
 
-	// Mock data - will be replaced with database queries
-	let propertyInfo = $state<PropertyInfo>({
-		name: 'EC at Punggol',
-		basePrice: 650000,
-		buyerStampDuty: 19600,
-		otherFees: 5000
-	});
+	// PageData is auto-generated from load function return type
+	let { data }: { data: PageData } = $props();
 
-	let loanSummary = $state<LoanSummary>({
-		totals: {
-			principalBorrowed: 125000,
-			interestCharged: 3250,
-			totalRepaid: 30000,
-			outstandingPrincipal: 95000,
-			outstandingInterest: 3250
-		},
-		borrowers: {
-			me: {
-				principalOwed: 57000,
-				interestOwed: 1950,
-				totalPaidHistorically: 20000
-			},
-			spouse: {
-				principalOwed: 38000,
-				interestOwed: 1300,
-				totalPaidHistorically: 10000
-			}
-		}
-	});
-
-	let transactions = $state<Transaction[]>([
-		{
-			id: '1',
-			date: '2024-01-15',
-			type: 'helper_disbursement',
-			category: 'booking_fee',
-			paidBy: 'helper',
-			amount: 5000,
-			description: 'Initial booking fee'
-		},
-		{
-			id: '2',
-			date: '2024-02-01',
-			type: 'helper_disbursement',
-			category: 'down_payment',
-			paidBy: 'helper',
-			amount: 100000,
-			description: 'Down payment to developer'
-		},
-		{
-			id: '3',
-			date: '2024-03-15',
-			type: 'interest_charge',
-			category: 'interest',
-			paidBy: 'helper',
-			amount: 1250,
-			description: 'Q1 bank loan interest'
-		},
-		{
-			id: '4',
-			date: '2024-04-01',
-			type: 'repayment',
-			category: 'repayment',
-			paidBy: 'me',
-			amount: 15000,
-			description: 'First repayment'
-		}
-	]);
+	// Access server data - automatically typed and reactive
+	let propertyInfo = $derived(data.propertyInfo);
+	let loanSummary = $derived(data.loanSummary);
+	let transactions = $derived(data.transactions);
+let borrowerSplits = $derived((data.borrowerSplits as BorrowerSplit[] | undefined) ?? []);
 
 	let showTransactionModal = $state(false);
+	let transactionModalMode = $state<'create' | 'edit'>('create');
+	let editingTransaction = $state<Transaction | null>(null);
+	let showDeleteModal = $state(false);
+	let transactionToDelete = $state<Transaction | null>(null);
+let isTransactionSubmitting = $state(false);
+let isDeleteSubmitting = $state(false);
+let isSplitSubmitting = $state(false);
 
-	function handlePropertyUpdate(updated: PropertyInfo) {
-		propertyInfo = updated;
-		// TODO: Persist to database
+	async function handlePropertyUpdate(updated: typeof propertyInfo) {
+		try {
+			const formData = new FormData();
+			formData.append('name', updated.name);
+			formData.append('basePrice', updated.basePrice.toString());
+			formData.append('buyerStampDuty', updated.buyerStampDuty.toString());
+			formData.append('otherFees', updated.otherFees.toString());
+
+			const response = await fetch('?/updateProperty', {
+				method: 'POST',
+				body: formData
+			});
+
+			if (response.ok) {
+				// SvelteKit will automatically revalidate and update data
+				window.location.reload(); // Force reload to get fresh data
+			} else {
+				console.error('Failed to update property');
+				alert('Failed to update property information');
+			}
+		} catch (error) {
+			console.error('Error updating property:', error);
+			alert('An error occurred while updating property information');
+		}
 	}
 
-	function handleAddTransaction(formData: TransactionFormData) {
-		const newTransaction: Transaction = {
-			...formData,
-			id: crypto.randomUUID()
-		};
-		transactions = [...transactions, newTransaction].sort(
-			(a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
-		);
-		// TODO: Recalculate loan summary and persist to database
+	function buildTransactionForm(formData: TransactionFormData, id?: string) {
+		const form = new FormData();
+		if (id) form.append('id', id);
+		form.append('date', formData.date);
+		form.append('type', formData.type);
+		form.append('category', formData.category);
+		form.append('paidBy', formData.paidBy);
+		form.append('amount', formData.amount.toString());
+		form.append('description', formData.description);
+		return form;
+	}
+
+	async function submitTransaction(
+		action: 'addTransaction' | 'updateTransaction',
+		formData: TransactionFormData,
+		id?: string
+	) {
+		isTransactionSubmitting = true;
+		try {
+			const form = buildTransactionForm(formData, id);
+			const response = await fetch(`?/${action}`, {
+				method: 'POST',
+				body: form
+			});
+			const result = await response.json().catch(() => ({}));
+
+			if (response.ok && result?.success) {
+				closeTransactionModal();
+				window.location.reload();
+				return;
+			}
+
+			const message =
+				result?.data?.message ||
+				result?.message ||
+				`Failed to ${action === 'addTransaction' ? 'add' : 'update'} transaction`;
+			console.error(`Failed to ${action}:`, result);
+			alert(message);
+		} catch (error) {
+			console.error(`Error during ${action}:`, error);
+			alert('An error occurred while saving the transaction');
+		} finally {
+			isTransactionSubmitting = false;
+		}
+	}
+
+	async function handleAddTransaction(formData: TransactionFormData) {
+		return submitTransaction('addTransaction', formData);
+	}
+
+	async function handleUpdateTransaction(formData: TransactionFormData) {
+		if (!editingTransaction) return;
+		return submitTransaction('updateTransaction', formData, editingTransaction.id);
 	}
 
 	function openTransactionModal() {
+		transactionModalMode = 'create';
+		editingTransaction = null;
 		showTransactionModal = true;
 	}
+
+	function closeTransactionModal() {
+		showTransactionModal = false;
+		transactionModalMode = 'create';
+		editingTransaction = null;
+	}
+
+	function handleEditTransaction(transaction: Transaction) {
+		transactionModalMode = 'edit';
+		editingTransaction = transaction;
+		showTransactionModal = true;
+	}
+
+	function handleRequestDelete(transaction: Transaction) {
+		transactionToDelete = transaction;
+		showDeleteModal = true;
+	}
+
+	function closeDeleteModal() {
+		if (isDeleteSubmitting) return;
+		showDeleteModal = false;
+		transactionToDelete = null;
+	}
+
+	async function handleDeleteTransaction() {
+		if (!transactionToDelete) return;
+		isDeleteSubmitting = true;
+		try {
+			const form = new FormData();
+			form.append('id', transactionToDelete.id);
+			const response = await fetch('?/deleteTransaction', {
+				method: 'POST',
+				body: form
+			});
+			const result = await response.json().catch(() => ({}));
+
+			if (response.ok && result?.success) {
+				closeDeleteModal();
+				window.location.reload();
+				return;
+			}
+
+			const message = result?.data?.message || result?.message || 'Failed to delete transaction';
+			console.error('Failed to delete transaction:', result);
+			alert(message);
+		} catch (error) {
+			console.error('Error deleting transaction:', error);
+			alert('An error occurred while deleting the transaction');
+		} finally {
+			isDeleteSubmitting = false;
+		}
+	}
+
+	async function handleSaveBorrowerSplit(data: {
+		effectiveFrom: string;
+		mePercent: number;
+		spousePercent: number;
+	}) {
+		isSplitSubmitting = true;
+		try {
+			const form = new FormData();
+			form.append('effectiveFrom', data.effectiveFrom);
+			form.append('mePercent', data.mePercent.toString());
+			form.append('spousePercent', data.spousePercent.toString());
+			const response = await fetch('?/addBorrowerSplit', {
+				method: 'POST',
+				body: form
+			});
+			const result = await response.json().catch(() => ({}));
+
+			if (response.ok && result?.success) {
+				window.location.reload();
+				return;
+			}
+
+			const message = result?.data?.message || result?.message || 'Failed to save borrower split';
+			console.error('Failed to save borrower split:', result);
+			alert(message);
+		} catch (error) {
+			console.error('Error saving borrower split:', error);
+			alert('An error occurred while saving the borrower split');
+		} finally {
+			isSplitSubmitting = false;
+		}
+	}
 </script>
+
+<svelte:head>
+	<title>Loan Tracker</title>
+</svelte:head>
 
 <div class="min-h-screen bg-gray-50 p-6">
 	<div class="mx-auto max-w-7xl">
@@ -114,16 +221,33 @@
 					<PropertyCard {propertyInfo} onUpdate={handlePropertyUpdate} />
 				</section>
 
-				<section aria-labelledby="loan-heading">
-					<h2 id="loan-heading" class="sr-only">Loan Summary</h2>
-					<LoanSummaryCard {loanSummary} />
-				</section>
+				<div class="space-y-6">
+					<section aria-labelledby="loan-heading">
+						<h2 id="loan-heading" class="sr-only">Loan Summary</h2>
+						<LoanSummaryCard {loanSummary} />
+					</section>
+
+					<section aria-labelledby="split-heading">
+						<h2 id="split-heading" class="sr-only">Borrower Split</h2>
+						<BorrowerSplitCard
+							currentSplit={borrowerSplits?.[0] ?? null}
+							history={borrowerSplits ?? []}
+							onSave={handleSaveBorrowerSplit}
+							isSaving={isSplitSubmitting}
+						/>
+					</section>
+				</div>
 			</div>
 
 			<!-- Transactions -->
 			<section aria-labelledby="transactions-heading">
 				<h2 id="transactions-heading" class="sr-only">Transactions</h2>
-				<TransactionTable {transactions} onAddTransaction={openTransactionModal} />
+				<TransactionTable
+					{transactions}
+					onAddTransaction={openTransactionModal}
+					onEditTransaction={handleEditTransaction}
+					onDeleteTransaction={handleRequestDelete}
+				/>
 			</section>
 		</main>
 	</div>
@@ -133,6 +257,42 @@
 <TransactionModal
 	bind:open={showTransactionModal}
 	{loanSummary}
-	onClose={() => (showTransactionModal = false)}
-	onSubmit={handleAddTransaction}
+	mode={transactionModalMode}
+	initialData={editingTransaction}
+	onClose={closeTransactionModal}
+	onSubmit={transactionModalMode === 'edit' ? handleUpdateTransaction : handleAddTransaction}
+	isSubmitting={isTransactionSubmitting}
 />
+
+<!-- Delete Transaction Modal -->
+<Modal open={showDeleteModal} title="Delete Transaction" onClose={closeDeleteModal}>
+	{#snippet children()}
+		<p class="text-sm text-gray-600">
+			Are you sure you want to delete{' '}
+			<strong>{formatCurrency(transactionToDelete?.amount || 0)}</strong> from{' '}
+			{transactionToDelete ? formatDate(transactionToDelete.date) : 'this transaction'}? This
+			action cannot be undone.
+		</p>
+	{/snippet}
+
+	{#snippet footer()}
+		<div class="flex justify-end gap-2">
+			<button
+				type="button"
+				class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+				onclick={closeDeleteModal}
+				disabled={isDeleteSubmitting}
+			>
+				Cancel
+			</button>
+			<button
+				type="button"
+				class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+				onclick={handleDeleteTransaction}
+				disabled={isDeleteSubmitting}
+			>
+				{isDeleteSubmitting ? 'Deleting...' : 'Delete'}
+			</button>
+		</div>
+	{/snippet}
+</Modal>

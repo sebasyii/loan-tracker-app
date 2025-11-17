@@ -9,9 +9,16 @@
 	interface Props {
 		transactions: Transaction[];
 		onAddTransaction: () => void;
+		onEditTransaction?: (transaction: Transaction) => void;
+		onDeleteTransaction?: (transaction: Transaction) => void;
 	}
 
-	let { transactions, onAddTransaction }: Props = $props();
+	let {
+		transactions,
+		onAddTransaction,
+		onEditTransaction,
+		onDeleteTransaction
+	}: Props = $props();
 	let filterType = $state<TransactionType | 'all'>('all');
 
 	let filteredTransactions = $derived(
@@ -80,6 +87,9 @@
 						<th scope="col" class="px-6 py-3 text-left text-xs font-semibold uppercase text-gray-700">
 							Description
 						</th>
+						<th scope="col" class="px-6 py-3 text-right text-xs font-semibold uppercase text-gray-700">
+							Actions
+						</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-gray-200">
@@ -112,6 +122,24 @@
 							</td>
 							<td class="px-6 py-4 text-sm text-gray-600">
 								{transaction.description || '-'}
+							</td>
+							<td class="whitespace-nowrap px-6 py-4 text-right text-sm">
+								<div class="flex justify-end gap-2">
+									<Button
+										variant="secondary"
+										size="sm"
+										onclick={() => onEditTransaction?.(transaction)}
+									>
+										Edit
+									</Button>
+									<Button
+										variant="danger"
+										size="sm"
+										onclick={() => onDeleteTransaction?.(transaction)}
+									>
+										Delete
+									</Button>
+								</div>
 							</td>
 						</tr>
 					{/each}

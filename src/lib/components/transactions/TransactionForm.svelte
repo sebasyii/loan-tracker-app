@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TransactionFormData, LoanSummary, ValidationError } from '$lib/types';
+	import type { TransactionFormData, LoanSummary, ValidationError, Transaction } from '$lib/types';
 	import { formatCurrency, getTodayISODate } from '$lib/utils/formatting';
 	import {
 		CATEGORY_OPTIONS,
@@ -16,20 +16,61 @@
 		loanSummary: LoanSummary;
 		onSubmit: (formData: TransactionFormData) => void;
 		isSubmitting?: boolean;
+		mode?: 'create' | 'edit';
+		initialData?: Transaction | null;
 	}
 
-	let { loanSummary, onSubmit, isSubmitting = false }: Props = $props();
+	let {
+		loanSummary,
+		onSubmit,
+		isSubmitting = false,
+		mode = 'create',
+		initialData = null
+	}: Props = $props();
 
-	let formData = $state<TransactionFormData>({
-		date: getTodayISODate(),
-		type: 'helper_disbursement',
-		category: 'booking_fee',
-		amount: 0,
-		paidBy: 'helper',
-		description: ''
-	});
+	function getDefaultFormValues(): TransactionFormData {
+		return {
+			date: getTodayISODate(),
+			type: 'helper_disbursement',
+			category: 'booking_fee',
+			amount: 0,
+			paidBy: 'helper',
+			description: ''
+		};
+	}
+
+	function mapTransactionToFormData(txn: Transaction): TransactionFormData {
+		return {
+			date: txn.date,
+			type: txn.type,
+			category: txn.category,
+			amount: txn.amount,
+			paidBy: txn.paidBy,
+			description: txn.description
+		};
+	}
+
+	let formData = $state<TransactionFormData>(
+		initialData && mode === 'edit' ? mapTransactionToFormData(initialData) : getDefaultFormValues()
+	);
 
 	let errors = $state<ValidationError[]>([]);
+	let lastInitKey = $state<string>(mode === 'edit' && initialData ? `edit-${initialData.id}` : 'create');
+
+	$effect(() => {
+		if (mode === 'edit' && initialData) {
+			const nextKey = `edit-${initialData.id}`;
+			if (lastInitKey !== nextKey) {
+				formData = mapTransactionToFormData(initialData);
+				errors = [];
+				lastInitKey = nextKey;
+			}
+		} else if (mode === 'create' && lastInitKey !== 'create') {
+			formData = getDefaultFormValues();
+			errors = [];
+			lastInitKey = 'create';
+		}
+	});
 
 	function handleTypeChange() {
 		formData.category = getDefaultCategoryForType(formData.type);
@@ -66,14 +107,11 @@
 	);
 
 	export function reset() {
-		formData = {
-			date: getTodayISODate(),
-			type: 'helper_disbursement',
-			category: 'booking_fee',
-			amount: 0,
-			paidBy: 'helper',
-			description: ''
-		};
+		if (mode === 'edit' && initialData) {
+			formData = mapTransactionToFormData(initialData);
+		} else {
+			formData = getDefaultFormValues();
+		}
 		errors = [];
 	}
 </script>

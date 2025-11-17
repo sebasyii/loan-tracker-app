@@ -42,6 +42,14 @@ export interface LoanSummary {
 	};
 }
 
+export interface BorrowerSplit {
+	id: string;
+	effectiveFrom: string;
+	mePercent: number;
+	spousePercent: number;
+	createdAt: string;
+}
+
 export interface Transaction {
 	id: string;
 	date: string; // ISO date string

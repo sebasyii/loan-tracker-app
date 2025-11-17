@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { TransactionFormData, LoanSummary } from '$lib/types';
+	import type { TransactionFormData, LoanSummary, Transaction } from '$lib/types';
 	import Modal from '$lib/components/ui/Modal.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TransactionForm from './TransactionForm.svelte';
@@ -7,16 +7,27 @@
 	interface Props {
 		open: boolean;
 		loanSummary: LoanSummary;
+		mode?: 'create' | 'edit';
+		initialData?: Transaction | null;
 		onClose: () => void;
 		onSubmit: (formData: TransactionFormData) => void;
+		isSubmitting?: boolean;
 	}
 
-	let { open = $bindable(), loanSummary, onClose, onSubmit }: Props = $props();
+	let {
+		open = $bindable(),
+		loanSummary,
+		mode = 'create',
+		initialData = null,
+		onClose,
+		onSubmit,
+		isSubmitting = false
+	}: Props = $props();
 	let formComponent: TransactionForm | undefined = $state();
-	let isSubmitting = $state(false);
+	let localSubmitting = $state(false);
 
 	async function handleSubmit(formData: TransactionFormData) {
-		isSubmitting = true;
+		localSubmitting = true;
 		try {
 			await onSubmit(formData);
 			formComponent?.reset();
@@ -24,33 +35,50 @@
 		} catch (error) {
 			console.error('Failed to submit transaction:', error);
 		} finally {
-			isSubmitting = false;
+			localSubmitting = false;
 		}
 	}
 
 	function handleClose() {
-		if (!isSubmitting) {
+		if (!localSubmitting && !isSubmitting) {
 			formComponent?.reset();
 			onClose();
 		}
 	}
+
+	let title = $derived(mode === 'edit' ? 'Edit Transaction' : 'Add Transaction');
+	let submitLabel = $derived(() => {
+		if (isSubmitting || localSubmitting) {
+			return mode === 'edit' ? 'Saving...' : 'Adding...';
+		}
+		return mode === 'edit' ? 'Save Changes' : 'Add Transaction';
+	});
 </script>
 
-<Modal {open} title="Add Transaction" onClose={handleClose}>
+<Modal {open} {title} onClose={handleClose}>
 	{#snippet children()}
-		<TransactionForm bind:this={formComponent} {loanSummary} onSubmit={handleSubmit} {isSubmitting} />
+		<TransactionForm
+			bind:this={formComponent}
+			{loanSummary}
+			{isSubmitting}
+			onSubmit={handleSubmit}
+			{mode}
+			initialData={initialData}
+		/>
 	{/snippet}
 
 	{#snippet footer()}
 		<div class="flex justify-end gap-3">
-			<Button variant="secondary" onclick={handleClose} disabled={isSubmitting}>Cancel</Button>
+			<Button variant="secondary" onclick={handleClose} disabled={isSubmitting || localSubmitting}>
+				Cancel
+			</Button>
 			<Button
 				type="submit"
 				variant="primary"
-				disabled={isSubmitting}
+				disabled={isSubmitting || localSubmitting}
 				onclick={() => formComponent?.handleSubmit(new Event('submit'))}
 			>
-				{isSubmitting ? 'Adding...' : 'Add Transaction'}
+				{submitLabel}
 			</Button>
 		</div>
 	{/snippet}

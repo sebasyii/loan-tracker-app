@@ -1,6 +1,7 @@
 <script lang="ts">
 	interface Props {
 		id: string;
+		name?: string;
 		label: string;
 		type?: string;
 		value: string | number;
@@ -10,12 +11,15 @@
 		prefix?: string;
 		disabled?: boolean;
 		min?: string | number;
+		max?: string | number;
 		step?: string | number;
 		placeholder?: string;
+		onchange?: (e: Event) => void;
 	}
 
 	let {
 		id,
+		name,
 		label,
 		type = 'text',
 		value = $bindable(),
@@ -25,9 +29,14 @@
 		prefix,
 		disabled = false,
 		min,
+		max,
 		step,
-		placeholder
+		placeholder,
+		onchange
 	}: Props = $props();
+
+	// Use name if provided, otherwise fall back to id
+	let inputName = $derived(name || id);
 </script>
 
 <div class="space-y-1">
@@ -44,13 +53,16 @@
 		{/if}
 		<input
 			{id}
+			name={inputName}
 			{type}
 			bind:value
 			{required}
 			{disabled}
 			{min}
+			{max}
 			{step}
 			{placeholder}
+			{onchange}
 			aria-required={required}
 			aria-invalid={!!error}
 			aria-describedby={error ? `${id}-error` : helpText ? `${id}-help` : undefined}

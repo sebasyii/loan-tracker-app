@@ -50,6 +50,11 @@ export interface BorrowerSplit {
 	createdAt: string;
 }
 
+export interface BorrowerAllocationOverride {
+	meAmount: number;
+	spouseAmount: number;
+}
+
 export interface Transaction {
 	id: string;
 	date: string; // ISO date string
@@ -58,6 +63,8 @@ export interface Transaction {
 	paidBy: Payer;
 	amount: number;
 	description: string;
+	// Optional override for borrower allocation (only for helper_disbursement & interest_charge)
+	borrowerOverride?: BorrowerAllocationOverride;
 }
 
 export interface TransactionFormData {
@@ -67,6 +74,8 @@ export interface TransactionFormData {
 	amount: number;
 	paidBy: Payer;
 	description: string;
+	// Optional override for borrower allocation
+	borrowerOverride?: BorrowerAllocationOverride;
 }
 
 export interface CategoryOption {

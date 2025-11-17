@@ -28,6 +28,10 @@ export const transactions = sqliteTable('transactions', {
 	paidBy: text('paid_by', { enum: ['helper', 'me', 'spouse'] }).notNull(),
 	amount: integer('amount').notNull(), // Amount in cents (SGD * 100)
 	description: text('description').notNull(),
+	// Optional override for borrower allocation (only for helper_disbursement & interest_charge)
+	// When set, these override the default split percentage calculation
+	borrowerOverrideMeAmount: integer('borrower_override_me_amount'), // In cents
+	borrowerOverrideSpouseAmount: integer('borrower_override_spouse_amount'), // In cents
 	createdAt: text('created_at')
 		.notNull()
 		.$defaultFn(() => new Date().toISOString())

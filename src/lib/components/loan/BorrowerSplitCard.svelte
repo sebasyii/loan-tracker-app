@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { BorrowerSplit } from '$lib/types';
 	import { formatDate, getTodayISODate } from '$lib/utils/formatting';
+	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import Card from '$lib/components/ui/Card.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
@@ -8,11 +11,9 @@
 	interface Props {
 		currentSplit: BorrowerSplit | null;
 		history: BorrowerSplit[];
-		onSave: (data: { effectiveFrom: string; mePercent: number; spousePercent: number }) => void;
-		isSaving?: boolean;
 	}
 
-	let { currentSplit, history = [], onSave, isSaving = false }: Props = $props();
+	let { currentSplit, history = [] }: Props = $props();
 
 	let editing = $state(false);
 	let formData = $state({
@@ -21,6 +22,7 @@
 		spousePercent: currentSplit?.spousePercent ?? 50
 	});
 	let error = $state<string | null>(null);
+	let isSubmitting = $state(false);
 
 	function startEditing() {
 		formData = {
@@ -42,28 +44,42 @@
 		error = total === 100 ? null : 'Split must total 100%';
 	}
 
-	async function handleSubmit(event: Event) {
-		event.preventDefault();
+	function validateForm(): boolean {
 		const mePercent = Number(formData.mePercent);
 		const spousePercent = Number(formData.spousePercent);
+
 		if (isNaN(mePercent) || isNaN(spousePercent)) {
 			error = 'Percentages are required';
-			return;
+			return false;
 		}
 
 		if (mePercent + spousePercent !== 100) {
 			error = 'Split must total 100%';
-			return;
+			return false;
 		}
 
 		error = null;
-		await onSave({
-			effectiveFrom: formData.effectiveFrom,
-			mePercent,
-			spousePercent
-		});
-		editing = false;
+		return true;
 	}
+
+	const handleSubmit: SubmitFunction = () => {
+		if (!validateForm()) {
+			return () => {}; // Return empty function to cancel submission
+		}
+
+		isSubmitting = true;
+
+		return async ({ result }) => {
+			isSubmitting = false;
+
+			if (result.type === 'success') {
+				await invalidateAll();
+				editing = false;
+			} else if (result.type === 'failure') {
+				error = result.data?.message || 'Failed to save borrower split';
+			}
+		};
+	};
 
 	let latestSplit = $derived(currentSplit || history[0] || null);
 </script>
@@ -94,10 +110,11 @@
 	{/if}
 
 	{#if editing}
-		<form class="space-y-3" onsubmit={handleSubmit}>
+		<form class="space-y-3" method="POST" action="?/addBorrowerSplit" use:enhance={handleSubmit}>
 			<Input
 				id="split-date"
 				label="Effective From"
+				name="effectiveFrom"
 				type="date"
 				bind:value={formData.effectiveFrom}
 				required
@@ -106,6 +123,7 @@
 				<Input
 					id="split-me"
 					label="Me (%)"
+					name="mePercent"
 					type="number"
 					bind:value={formData.mePercent}
 					min="0"
@@ -118,6 +136,7 @@
 				<Input
 					id="split-spouse"
 					label="Spouse (%)"
+					name="spousePercent"
 					type="number"
 					bind:value={formData.spousePercent}
 					min="0"
@@ -137,9 +156,11 @@
 			</p>
 
 			<div class="flex justify-end gap-2">
-				<Button variant="secondary" onclick={handleCancel} disabled={isSaving}>Cancel</Button>
-				<Button type="submit" variant="primary" disabled={isSaving}>
-					{isSaving ? 'Saving...' : 'Save Split'}
+				<Button type="button" variant="secondary" onclick={handleCancel} disabled={isSubmitting}>
+					Cancel
+				</Button>
+				<Button type="submit" variant="primary" disabled={isSubmitting}>
+					{isSubmitting ? 'Saving...' : 'Save Split'}
 				</Button>
 			</div>
 		</form>

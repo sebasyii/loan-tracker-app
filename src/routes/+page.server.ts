@@ -107,7 +107,8 @@ export const actions: Actions = {
 
 			await updatePropertyInfo(propertyData);
 
-			return { success: true, type: 'property_updated' };
+			// Return nothing for success (implicit success)
+			return;
 		} catch (err) {
 			console.error('Error updating property:', err);
 			return fail(500, {
@@ -191,8 +192,8 @@ export const actions: Actions = {
 
 		try {
 			await addTransaction(transactionData);
-
-			return { success: true, type: 'transaction_added' };
+			// Return nothing for success (implicit success)
+			return;
 		} catch (err) {
 			console.error('Error adding transaction:', err);
 			return fail(500, {
@@ -301,7 +302,8 @@ export const actions: Actions = {
 
 		try {
 			await updateTransaction(id, transactionData);
-			return { success: true, type: 'transaction_updated' };
+			// Return nothing for success (implicit success)
+			return;
 		} catch (err) {
 			console.error('Error updating transaction:', err);
 			return fail(500, {
@@ -335,7 +337,8 @@ export const actions: Actions = {
 
 		try {
 			await deleteTransaction(id);
-			return { success: true, type: 'transaction_deleted' };
+			// Return nothing for success (implicit success)
+			return;
 		} catch (err) {
 			console.error('Error deleting transaction:', err);
 			return fail(500, {
@@ -384,7 +387,8 @@ export const actions: Actions = {
 
 		try {
 			await createBorrowerSplit(effectiveFrom, mePercent, spousePercent);
-			return { success: true, type: 'borrower_split_added' };
+			// Return nothing for success (implicit success)
+			return;
 		} catch (err) {
 			console.error('Error adding borrower split:', err);
 			return fail(500, {

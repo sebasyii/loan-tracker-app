@@ -2,32 +2,45 @@
 	import type { PropertyInfo } from '$lib/types';
 	import { formatCurrency } from '$lib/utils/formatting';
 	import { calculatePropertyTotalCost } from '$lib/utils/calculations';
+	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Card from '$lib/components/ui/Card.svelte';
 
 	interface Props {
 		propertyInfo: PropertyInfo;
-		onUpdate?: (updated: PropertyInfo) => void;
 	}
 
-	let { propertyInfo, onUpdate }: Props = $props();
+	let { propertyInfo }: Props = $props();
 	let editing = $state(false);
 	let formData = $state({ ...propertyInfo });
+	let isSubmitting = $state(false);
 
 	function handleEdit() {
 		formData = { ...propertyInfo };
 		editing = true;
 	}
 
-	function handleSave() {
-		onUpdate?.(formData);
-		editing = false;
-	}
-
 	function handleCancel() {
 		editing = false;
 	}
+
+	const handleSubmit: SubmitFunction = () => {
+		isSubmitting = true;
+
+		return async ({ result }) => {
+			isSubmitting = false;
+
+			if (result.type === 'success') {
+				await invalidateAll();
+				editing = false;
+			} else if (result.type === 'failure') {
+				alert(result.data?.message || 'Failed to update property information');
+			}
+		};
+	};
 
 	let totalCost = $derived(calculatePropertyTotalCost(propertyInfo));
 </script>
@@ -41,11 +54,12 @@
 	</div>
 
 	{#if editing}
-		<form class="space-y-3" onsubmit={(e) => e.preventDefault()}>
-			<Input id="property-name" label="Property Name" bind:value={formData.name} required />
+		<form class="space-y-3" method="POST" action="?/updateProperty" use:enhance={handleSubmit}>
+			<Input id="property-name" label="Property Name" name="name" bind:value={formData.name} required />
 			<Input
 				id="base-price"
 				label="Base Price"
+				name="basePrice"
 				type="number"
 				bind:value={formData.basePrice}
 				required
@@ -53,6 +67,7 @@
 			<Input
 				id="stamp-duty"
 				label="Buyer Stamp Duty"
+				name="buyerStampDuty"
 				type="number"
 				bind:value={formData.buyerStampDuty}
 				required
@@ -60,13 +75,18 @@
 			<Input
 				id="other-fees"
 				label="Other Fees"
+				name="otherFees"
 				type="number"
 				bind:value={formData.otherFees}
 				required
 			/>
 			<div class="flex gap-2">
-				<Button variant="primary" onclick={handleSave}>Save</Button>
-				<Button variant="secondary" onclick={handleCancel}>Cancel</Button>
+				<Button type="submit" variant="primary" disabled={isSubmitting}>
+					{isSubmitting ? 'Saving...' : 'Save'}
+				</Button>
+				<Button type="button" variant="secondary" onclick={handleCancel} disabled={isSubmitting}>
+					Cancel
+				</Button>
 			</div>
 		</form>
 	{:else}

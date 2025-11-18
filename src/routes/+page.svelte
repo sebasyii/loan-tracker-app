@@ -1,10 +1,6 @@
 <script lang="ts">
 	import type { PageData } from "./$types";
-	import type {
-		TransactionFormData,
-		Transaction,
-		BorrowerSplit,
-	} from "$lib/types";
+	import type { Transaction, BorrowerSplit } from "$lib/types";
 	import PropertyCard from "$lib/components/property/PropertyCard.svelte";
 	import LoanSummaryCard from "$lib/components/loan/LoanSummaryCard.svelte";
 	import BorrowerSplitCard from "$lib/components/loan/BorrowerSplitCard.svelte";
@@ -12,9 +8,9 @@
 	import TransactionModal from "$lib/components/transactions/TransactionModal.svelte";
 	import Modal from "$lib/components/ui/Modal.svelte";
 	import { formatCurrency, formatDate } from "$lib/utils/formatting";
-	import { applyAction, deserialize } from "$app/forms";
-	import type { ActionResult } from "@sveltejs/kit";
+	import { enhance } from "$app/forms";
 	import { invalidateAll } from "$app/navigation";
+	import type { SubmitFunction } from "@sveltejs/kit";
 
 	// PageData is auto-generated from load function return type
 	let { data }: { data: PageData } = $props();
@@ -32,111 +28,7 @@
 	let editingTransaction = $state<Transaction | null>(null);
 	let showDeleteModal = $state(false);
 	let transactionToDelete = $state<Transaction | null>(null);
-	let isTransactionSubmitting = $state(false);
 	let isDeleteSubmitting = $state(false);
-	let isSplitSubmitting = $state(false);
-
-	async function handlePropertyUpdate(updated: typeof propertyInfo) {
-		try {
-			const formData = new FormData();
-			formData.append("name", updated.name);
-			formData.append("basePrice", updated.basePrice.toString());
-			formData.append(
-				"buyerStampDuty",
-				updated.buyerStampDuty.toString(),
-			);
-			formData.append("otherFees", updated.otherFees.toString());
-
-			const response = await fetch("?/updateProperty", {
-				method: "POST",
-				body: formData,
-			});
-
-			if (response.ok) {
-				// SvelteKit will automatically revalidate and update data
-				window.location.reload(); // Force reload to get fresh data
-			} else {
-				console.error("Failed to update property");
-				alert("Failed to update property information");
-			}
-		} catch (error) {
-			console.error("Error updating property:", error);
-			alert("An error occurred while updating property information");
-		}
-	}
-
-	function buildTransactionForm(formData: TransactionFormData, id?: string) {
-		const form = new FormData();
-		if (id) form.append("id", id);
-		form.append("date", formData.date);
-		form.append("type", formData.type);
-		form.append("category", formData.category);
-		form.append("paidBy", formData.paidBy);
-		form.append("amount", formData.amount.toString());
-		form.append("description", formData.description);
-
-		// Add borrower override if present
-		if (formData.borrowerOverride) {
-			form.append(
-				"borrowerOverrideMeAmount",
-				formData.borrowerOverride.meAmount.toString(),
-			);
-			form.append(
-				"borrowerOverrideSpouseAmount",
-				formData.borrowerOverride.spouseAmount.toString(),
-			);
-		}
-
-		return form;
-	}
-
-	async function submitTransaction(
-		action: "addTransaction" | "updateTransaction",
-		formData: TransactionFormData,
-		id?: string,
-	) {
-		isTransactionSubmitting = true;
-		try {
-			const form = buildTransactionForm(formData, id);
-			const response = await fetch(`?/${action}`, {
-				method: "POST",
-				body: form,
-			});
-			// const result = await response.json().catch(() => ({}));
-			const result: ActionResult = deserialize(await response.text());
-			console.log(result);
-
-			if (response.ok && result?.type === "success") {
-				// closeTransactionModal();
-				await invalidateAll();
-			}
-
-			// const message =
-			// 	result?.message ||
-			// 	`Failed to ${action === "addTransaction" ? "add" : "update"} transaction`;
-			// console.error(`Failed to ${action}:`, result);
-			applyAction(result);
-			// alert(message);
-		} catch (error) {
-			console.error(`Error during ${action}:`, error);
-			alert("An error occurred while saving the transaction");
-		} finally {
-			isTransactionSubmitting = false;
-		}
-	}
-
-	async function handleAddTransaction(formData: TransactionFormData) {
-		return submitTransaction("addTransaction", formData);
-	}
-
-	async function handleUpdateTransaction(formData: TransactionFormData) {
-		if (!editingTransaction) return;
-		return submitTransaction(
-			"updateTransaction",
-			formData,
-			editingTransaction.id,
-		);
-	}
 
 	function openTransactionModal() {
 		transactionModalMode = "create";
@@ -167,69 +59,21 @@
 		transactionToDelete = null;
 	}
 
-	async function handleDeleteTransaction() {
-		if (!transactionToDelete) return;
+	const handleDeleteSubmit: SubmitFunction = () => {
 		isDeleteSubmitting = true;
-		try {
-			const form = new FormData();
-			form.append("id", transactionToDelete.id);
-			const response = await fetch("?/deleteTransaction", {
-				method: "POST",
-				body: form,
-			});
-			const result = await response.json().catch(() => ({}));
 
-			if (response.ok && result?.success) {
-				closeDeleteModal();
-				window.location.reload();
-				return;
-			}
-
-			const message = result?.message || "Failed to delete transaction";
-			console.error("Failed to delete transaction:", result);
-			alert(message);
-		} catch (error) {
-			console.error("Error deleting transaction:", error);
-			alert("An error occurred while deleting the transaction");
-		} finally {
+		return async ({ result }) => {
 			isDeleteSubmitting = false;
-		}
-	}
 
-	async function handleSaveBorrowerSplit(data: {
-		effectiveFrom: string;
-		mePercent: number;
-		spousePercent: number;
-	}) {
-		isSplitSubmitting = true;
-		try {
-			const form = new FormData();
-			form.append("effectiveFrom", data.effectiveFrom);
-			form.append("mePercent", data.mePercent.toString());
-			form.append("spousePercent", data.spousePercent.toString());
-			const response = await fetch("?/addBorrowerSplit", {
-				method: "POST",
-				body: form,
-			});
-			const result = await response.json().catch(() => ({}));
-
-			console.log(result);
-
-			if (response.ok && result?.type === "success") {
-				window.location.reload();
-				return;
+			if (result.type === "success") {
+				await invalidateAll();
+				closeDeleteModal();
+			} else if (result.type === "failure") {
+				const message = result.data?.message || "Failed to delete transaction";
+				alert(message);
 			}
-
-			const message = result?.message || "Failed to save borrower split";
-			console.error("Failed to save borrower split:", result);
-			alert(message);
-		} catch (error) {
-			console.error("Error saving borrower split:", error);
-			alert("An error occurred while saving the borrower split");
-		} finally {
-			isSplitSubmitting = false;
-		}
-	}
+		};
+	};
 </script>
 
 <svelte:head>
@@ -254,10 +98,7 @@
 					<h2 id="property-heading" class="sr-only">
 						Property Information
 					</h2>
-					<PropertyCard
-						{propertyInfo}
-						onUpdate={handlePropertyUpdate}
-					/>
+					<PropertyCard {propertyInfo} />
 				</section>
 
 				<div class="space-y-6">
@@ -273,8 +114,6 @@
 						<BorrowerSplitCard
 							currentSplit={borrowerSplits?.[0] ?? null}
 							history={borrowerSplits ?? []}
-							onSave={handleSaveBorrowerSplit}
-							isSaving={isSplitSubmitting}
 						/>
 					</section>
 				</div>
@@ -302,10 +141,6 @@
 	mode={transactionModalMode}
 	initialData={editingTransaction}
 	onClose={closeTransactionModal}
-	onSubmit={transactionModalMode === "edit"
-		? handleUpdateTransaction
-		: handleAddTransaction}
-	isSubmitting={isTransactionSubmitting}
 />
 
 <!-- Delete Transaction Modal -->
@@ -315,7 +150,7 @@
 	onClose={closeDeleteModal}
 >
 	{#snippet children()}
-		<p class="text-sm text-gray-600">
+		<p class="text-sm text-gray-600 mb-4">
 			Are you sure you want to delete{" "}
 			<strong>{formatCurrency(transactionToDelete?.amount || 0)}</strong>
 			from{" "}
@@ -323,10 +158,14 @@
 				? formatDate(transactionToDelete.date)
 				: "this transaction"}? This action cannot be undone.
 		</p>
-	{/snippet}
 
-	{#snippet footer()}
-		<div class="flex justify-end gap-2">
+		<form
+			method="POST"
+			action="?/deleteTransaction"
+			use:enhance={handleDeleteSubmit}
+			class="flex justify-end gap-2"
+		>
+			<input type="hidden" name="id" value={transactionToDelete?.id ?? ""} />
 			<button
 				type="button"
 				class="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
@@ -336,13 +175,12 @@
 				Cancel
 			</button>
 			<button
-				type="button"
+				type="submit"
 				class="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
-				onclick={handleDeleteTransaction}
 				disabled={isDeleteSubmitting}
 			>
 				{isDeleteSubmitting ? "Deleting..." : "Delete"}
 			</button>
-		</div>
+		</form>
 	{/snippet}
 </Modal>

@@ -6,6 +6,7 @@
 
 	interface Props {
 		id: string;
+		name?: string;
 		label: string;
 		value: string;
 		options: Option[];
@@ -17,6 +18,7 @@
 
 	let {
 		id,
+		name,
 		label,
 		value = $bindable(),
 		options,
@@ -25,6 +27,9 @@
 		disabled = false,
 		onchange
 	}: Props = $props();
+
+	// Use name if provided, otherwise fall back to id
+	let inputName = $derived(name || id);
 </script>
 
 <div class="space-y-1">
@@ -37,6 +42,7 @@
 
 	<select
 		{id}
+		name={inputName}
 		bind:value
 		{required}
 		{disabled}

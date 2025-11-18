@@ -3,7 +3,6 @@ import { redirect, fail } from '@sveltejs/kit';
 import {
 	getPropertyInfo,
 	createPropertyInfo,
-	getCurrentBorrowerSplit,
 	createBorrowerSplit
 } from '$lib/server/db/queries';
 import type { PropertyInfo } from '$lib/types';

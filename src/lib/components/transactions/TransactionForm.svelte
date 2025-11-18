@@ -14,26 +14,30 @@
 	} from '$lib/utils/transaction-helpers';
 	import { validateTransactionForm } from '$lib/utils/validation';
 	import { calculateBorrowerTotalOutstanding } from '$lib/utils/calculations';
+	import { enhance } from '$app/forms';
+	import { invalidateAll } from '$app/navigation';
+	import type { SubmitFunction } from '@sveltejs/kit';
 	import Input from '$lib/components/ui/Input.svelte';
 	import Select from '$lib/components/ui/Select.svelte';
 	import Textarea from '$lib/components/ui/Textarea.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
 
 	interface Props {
 		loanSummary: LoanSummary;
 		borrowerSplits: BorrowerSplit[];
-		onSubmit: (formData: TransactionFormData) => void;
-		isSubmitting?: boolean;
 		mode?: 'create' | 'edit';
 		initialData?: Transaction | null;
+		onSuccess?: () => void;
+		onCancel?: () => void;
 	}
 
 	let {
 		loanSummary,
 		borrowerSplits,
-		onSubmit,
-		isSubmitting = false,
 		mode = 'create',
-		initialData = null
+		initialData = null,
+		onSuccess,
+		onCancel
 	}: Props = $props();
 
 	function getDefaultFormValues(): TransactionFormData {
@@ -76,6 +80,7 @@
 
 	let errors = $state<ValidationError[]>([]);
 	let lastInitKey = $state<string>(mode === 'edit' && initialData ? `edit-${initialData.id}` : 'create');
+	let isSubmitting = $state(false);
 
 	// Custom split state
 	let useCustomSplit = $state(false);
@@ -145,14 +150,36 @@
 		}
 	}
 
-	export function handleSubmit(e: Event) {
-		e.preventDefault();
+	const handleSubmit: SubmitFunction = () => {
+		// Client-side validation
 		errors = validateTransactionForm(formData, loanSummary);
 
-		if (errors.length === 0) {
-			onSubmit(formData);
+		if (errors.length > 0) {
+			// Cancel submission if there are validation errors
+			return () => {}; // Return empty function to cancel submission
 		}
-	}
+
+		isSubmitting = true;
+
+		return async ({ result }) => {
+			isSubmitting = false;
+
+			if (result.type === 'success') {
+				// Force data revalidation
+				await invalidateAll();
+
+				// Data is now updated, safe to reset and close
+				reset();
+				onSuccess?.();
+			} else if (result.type === 'failure') {
+				// Server returned validation errors
+				const message = result.data?.message || 'Failed to save transaction';
+				errors = [{ field: 'form', message }];
+			} else if (result.type === 'error') {
+				errors = [{ field: 'form', message: 'An unexpected error occurred' }];
+			}
+		};
+	};
 
 	function getError(field: string): string | undefined {
 		return errors.find((e) => e.field === field)?.message;
@@ -203,12 +230,28 @@
 	}
 </script>
 
-<form class="space-y-4" onsubmit={handleSubmit}>
-	<Input id="date" label="Date" type="date" bind:value={formData.date} required error={getError('date')} />
+<form
+	id="transaction-form"
+	class="space-y-4"
+	method="POST"
+	action={mode === 'edit' ? '?/updateTransaction' : '?/addTransaction'}
+	use:enhance={handleSubmit}
+>
+	{#if mode === 'edit' && initialData}
+		<input type="hidden" name="id" value={initialData.id} />
+	{/if}
+
+	{#if useCustomSplit && canUseCustomSplit}
+		<input type="hidden" name="borrowerOverrideMeAmount" value={customMeAmount} />
+		<input type="hidden" name="borrowerOverrideSpouseAmount" value={customSpouseAmount} />
+	{/if}
+
+	<Input id="date" label="Date" name="date" type="date" bind:value={formData.date} required error={getError('date')} />
 
 	<Select
 		id="type"
 		label="Type"
+		name="type"
 		bind:value={formData.type}
 		options={[
 			{ value: 'helper_disbursement', label: 'Helper Disbursement' },
@@ -222,6 +265,7 @@
 	<Select
 		id="category"
 		label="Category"
+		name="category"
 		bind:value={formData.category}
 		options={categoryOptions}
 		required
@@ -230,6 +274,7 @@
 	<Input
 		id="amount"
 		label="Amount"
+		name="amount"
 		type="number"
 		bind:value={formData.amount}
 		min="0.01"
@@ -295,9 +340,15 @@
 		</div>
 	{/if}
 
+	{#if formData.type !== 'repayment'}
+		<!-- Hidden input when field is disabled, since disabled fields aren't submitted -->
+		<input type="hidden" name="paidBy" value={formData.paidBy} />
+	{/if}
+
 	<Select
 		id="paidBy"
 		label="Paid By"
+		name="paidBy"
 		bind:value={formData.paidBy}
 		options={payerOptions}
 		disabled={formData.type !== 'repayment'}
@@ -313,7 +364,21 @@
 	<Textarea
 		id="description"
 		label="Description"
+		name="description"
 		bind:value={formData.description}
 		placeholder="Optional notes about this transaction"
 	/>
+
+	{#if getError('form')}
+		<p class="text-sm text-red-600" role="alert">{getError('form')}</p>
+	{/if}
+
+	<div class="flex justify-end gap-3 border-t border-gray-200 pt-4">
+		<Button type="button" variant="secondary" onclick={onCancel} disabled={isSubmitting}>
+			Cancel
+		</Button>
+		<Button type="submit" variant="primary" disabled={isSubmitting}>
+			{isSubmitting ? (mode === 'edit' ? 'Saving...' : 'Adding...') : (mode === 'edit' ? 'Save Changes' : 'Add Transaction')}
+		</Button>
+	</div>
 </form>
